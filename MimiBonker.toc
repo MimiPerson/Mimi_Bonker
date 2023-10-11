@@ -1,0 +1,16 @@
+## Interface: 30300
+## Title: MimiBonker
+## DefaultState: enabled
+## Notes: Automates Deleting and Selling of items
+## Version 1
+## Author: MimiPy
+## Version: 0.0.1
+
+## SavedVariables: GlobalVar
+## SavedVariablesPerCharacter: LocalVar
+
+
+src/libs/*
+
+src\MimiBonker.lua
+src\MimiBonker.xml
