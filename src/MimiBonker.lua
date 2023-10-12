@@ -1,7 +1,7 @@
 local AceGUI = LibStub("AceGUI-3.0")
 
 -- Define item qualities and their corresponding colors
-ItemQualities = {
+local ItemQualities = {
   [0] = "Poor",
   [1] = "Common",
   [2] = "Uncommon",
@@ -11,7 +11,7 @@ ItemQualities = {
   [6] = "Artifact",
   [7] = "Vanity / Heirloom",
 }
-ItemQualityColors = {
+local ItemQualityColors = {
   "FF9D9D9D", -- Poor (Gray)
   "FFFFFFFF", -- Common (White)
   "FF1EFF00", -- Uncommon (Green)
@@ -25,7 +25,7 @@ ItemQualityColors = {
 -- Define the UI setup function
 function DrawUI()
   -- Create the frame container
-  ConfigFrame = AceGUI:Create("Frame")
+  local ConfigFrame = AceGUI:Create("Frame")
 
   -- Set the dimensions and appearance of the frame
   ConfigFrame:SetWidth(400)
@@ -34,7 +34,7 @@ function DrawUI()
   ConfigFrame:SetStatusText("Close and Save") -- Set status text
   ConfigFrame:SetCallback("OnClose", function(widget)
     AceGUI:Release(widget) -- Release the frame when closed and trigger BagLoop
-    BagLoop()
+    BagLoop("BAG_UPDATE")
   end)
 
   ConfigFrame:SetLayout("Fill") -- Set layout to fill the frame
@@ -81,26 +81,23 @@ function DrawGroup(container)
 
     header:SetFont("Fonts\\MORPHEUS.TTF", 14) -- Set the font and size
     header:SetText("|c" .. ItemQualityColors[i + 1] .. ItemQualities[i] .. "|r") -- Set text with item quality color
-    if LocalVar.DestroyQualities[i] then
-      DestroyBox:SetValue(LocalVar.DestroyQualities[i])
-    end
-
     -- Define callbacks for checkbox changes
     DestroyBox:SetCallback("OnValueChanged", function(self, event, value)
       LocalVar.DestroyQualities[i] = value
-      SellBox:SetValue(false) -- If destroying, uncheck selling
-    end)
 
-    if LocalVar.SellQualities[i] then
-      SellBox:SetValue(LocalVar.SellQualities[i])
-    end
+      if (value == true) then
+        LocalVar.SellQualities[i] = false
+        SellBox:SetValue(false) -- If destroying, uncheck selling
+      end
+    end)
 
     -- Define callbacks for checkbox changes
     SellBox:SetCallback("OnValueChanged", function(self, event, value)
       LocalVar.SellQualities[i] = value
 
       if value == true then
-        DestroyBox.SetValue(false) -- If selling, uncheck destroying
+        LocalVar.DestroyQualities[i] = false
+        DestroyBox:SetValue(false) -- If selling, uncheck destroying
       end
     end)
 
@@ -128,15 +125,40 @@ end
 local EventListener = CreateFrame("Frame", "eventListener")
 EventListener:RegisterEvent("BAG_UPDATE")
 EventListener:RegisterEvent("ADDON_LOADED")
+EventListener:RegisterEvent("MERCHANT_SHOW")
 
 -- Function to purge inventory
-function purgeInventory(itemName, rarity, bag, item)
+function PurgeInventory(itemName, rarity, bag, item)
   PickupContainerItem(bag, item)
   DeleteCursorItem()
 end
 
+function SellInventory(bag, item)
+  UseContainerItem(bag, item, true)
+end
+
+function FormatCopper(copper)
+  local gold = math.floor(copper / 10000)
+  local silver = math.floor((copper % 10000) / 100)
+  local remainingCopper = copper % 100
+  local FormattedString = ""
+  if (gold > 0) then
+    FormattedString = FormattedString .. "|cFFFFD864" .. gold .. "g|r "
+  end
+  if (silver > 0) then
+    FormattedString = FormattedString .. "|cFFFFFFFF" .. silver .. "s|r "
+  end
+
+  FormattedString = FormattedString .. "|cFFFF8000" .. remainingCopper .. "c|r"
+
+  return FormattedString
+end
+
 -- Function to loop through bags and perform actions
-function BagLoop()
+function BagLoop(event)
+  local ItemsDestroyed = 0
+  local ItemsSold = 0
+  local ItemValue = 0
   for bag = 0, 4 do
     if GetBagName(bag) then
       local numBagSlots = GetContainerNumSlots(bag)
@@ -145,16 +167,28 @@ function BagLoop()
           GetContainerItemInfo(bag, item)
         if itemLink then
           local itemId = itemLink:match("|Hitem:(%d+):")
-          local itemName, _, itemRarity = GetItemInfo(itemId)
-          if LocalVar.DestroyQualities[itemRarity] == true then
-            purgeInventory(itemName, itemRarity, bag, item)
+          local itemName, _, itemRarity, _, _, _, _, _, _, _, itemPrice =
+            GetItemInfo(itemId)
+          if LocalVar.DestroyQualities[itemRarity] == true and event == "BAG_UPDATE" then
+            PurgeInventory(itemName, itemRarity, bag, item)
+            ItemsDestroyed = ItemsDestroyed + 1
           end
-          if LocalVar.SellQualities[itemRarity] == true then
-            -- Perform selling action
+          if LocalVar.SellQualities[itemRarity] == true and event == "MERCHANT_SHOW" then
+            SellInventory(bag, item)
+            ItemValue = ItemValue + itemPrice
+            ItemsSold = ItemsSold + 1
           end
         end
       end
     end
+  end
+  if (ItemsDestroyed > 0) then
+    print("Destroyed " .. ItemsDestroyed .. " Items")
+  end
+  if (ItemsSold > 0) then
+    print("Sold |cFF00F2FF" .. ItemsSold .. "|r Items")
+
+    print("for |cFFE6CC80" .. FormatCopper(ItemValue))
   end
 end
 
@@ -191,7 +225,10 @@ function EventHandler(self, event, arg)
   end
 
   if event == "BAG_UPDATE" then
-    BagLoop()
+    BagLoop(event)
+  end
+  if event == "MERCHANT_SHOW" then
+    BagLoop(event)
   end
 end
 
